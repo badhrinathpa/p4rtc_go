@@ -21,14 +21,14 @@ var WRITE_BUFFER_SIZE = MAX_BATCH_SIZE * NUM_PARALLEL_WRITERS * 10
 type P4DeviceConfig []byte 
 
 type P4rtClient struct {
-	client         p4.P4RuntimeClient
-	stream         p4.P4Runtime_StreamChannelClient
-	deviceID       uint64
-	electionID     p4.Uint128
+	Client         p4.P4RuntimeClient
+	Stream         p4.P4Runtime_StreamChannelClient
+	DeviceID       uint64
+	ElectionID     p4.Uint128
 }
 
 func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
-	c.electionID = electionID
+	c.ElectionID = electionID
 	mastershipReq := &p4.StreamMessageRequest{
 		Update: &p4.StreamMessageRequest_Arbitration{
 			Arbitration: &p4.MasterArbitrationUpdate{
@@ -37,20 +37,20 @@ func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
 			},
 		},
 	}
-	err = c.stream.Send(mastershipReq)
+	err = c.Stream.Send(mastershipReq)
 	return
 }
 
 func (c *P4rtClient) Init() (err error) {
 	// Initialize stream for mastership and packet I/O
-	c.stream, err = c.client.StreamChannel(context.Background())
+	c.Stream, err = c.Client.StreamChannel(context.Background())
 	if err != nil {
 		fmt.Printf("stream channel error: %v\n", err)
 		return
 	}
 	go func() {
 		for {
-			res, err := c.stream.Recv()
+			res, err := c.Stream.Recv()
 			if err != nil {
 				fmt.Printf("stream recv error: %v\n", err)
 			} else if arb := res.GetArbitration(); arb != nil {
@@ -96,7 +96,7 @@ func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath st
 	pipeline.P4Info = &p4info
 	pipeline.P4DeviceConfig = deviceConfig
 	
-	err = SetPipelineConfig(c.client, c.deviceID, &c.electionID, &pipeline)
+	err = SetPipelineConfig(c.Client, c.DeviceID, &c.ElectionID, &pipeline)
 	if err != nil {
 		fmt.Printf("set pipeline config error %v",err)
 		return
@@ -164,8 +164,8 @@ func CreateChannel(host string, deviceID uint64) (*P4rtClient, error) {
 	}
 
 	client := &P4rtClient{
-		client:   p4.NewP4RuntimeClient(conn),
-		deviceID: deviceID,
+		Client:   p4.NewP4RuntimeClient(conn),
+		DeviceID: deviceID,
 	}
 
 	err = client.Init()
