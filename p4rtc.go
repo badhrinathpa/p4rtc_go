@@ -20,14 +20,14 @@ var NUM_PARALLEL_WRITERS = 1
 var WRITE_BUFFER_SIZE = MAX_BATCH_SIZE * NUM_PARALLEL_WRITERS * 10
 type P4DeviceConfig []byte 
 
-type p4rtClient struct {
+type P4rtClient struct {
 	client         p4.P4RuntimeClient
 	stream         p4.P4Runtime_StreamChannelClient
 	deviceID       uint64
 	electionID     p4.Uint128
 }
 
-func (c *p4rtClient) SetMastership(electionID p4.Uint128) (err error) {
+func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
 	c.electionID = electionID
 	mastershipReq := &p4.StreamMessageRequest{
 		Update: &p4.StreamMessageRequest_Arbitration{
@@ -41,7 +41,7 @@ func (c *p4rtClient) SetMastership(electionID p4.Uint128) (err error) {
 	return
 }
 
-func (c *p4rtClient) Init() (err error) {
+func (c *P4rtClient) Init() (err error) {
 	// Initialize stream for mastership and packet I/O
 	c.stream, err = c.client.StreamChannel(context.Background())
 	if err != nil {
@@ -70,7 +70,7 @@ func (c *p4rtClient) Init() (err error) {
 	return
 }
 
-func (c *p4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath string) (err error) {
+func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath string) (err error) {
 	fmt.Printf("P4 Info: %s\n", p4InfoPath)
 
 	p4infoBytes, err := ioutil.ReadFile(p4InfoPath)
@@ -154,7 +154,7 @@ func LoadDeviceConfig(deviceConfigPath string) (P4DeviceConfig, error) {
 	return bin, nil
 }
 
-func CreateChannel(host string, deviceID uint64) (*p4rtClient, error) {
+func CreateChannel(host string, deviceID uint64) (*P4rtClient, error) {
 	log.Println("create channel")
 	// Second, check to see if we can reuse the gRPC connection for a new P4RT client
 	conn, err := GetConnection(host)
@@ -163,7 +163,7 @@ func CreateChannel(host string, deviceID uint64) (*p4rtClient, error) {
 		return nil, err
 	}
 
-	client := &p4rtClient{
+	client := &P4rtClient{
 		client:   p4.NewP4RuntimeClient(conn),
 		deviceID: deviceID,
 	}
