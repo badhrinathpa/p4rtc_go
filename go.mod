@@ -1,4 +1,4 @@
-module github.com/badhrinathpa/p4rtc
+module github.com/badhrinathpa/p4rtc_go
 
 go 1.13
 
