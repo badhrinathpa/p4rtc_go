@@ -17,6 +17,7 @@ import (
 
 type P4DeviceConfig []byte
 
+const invalidID = 0
 const (
       FIELD_TYPE_EXACT      uint8=0
       FIELD_TYPE_LPM        uint8=1
@@ -60,9 +61,35 @@ type AppTableEntry struct {
 
 type P4rtClient struct {
 	Client         p4.P4RuntimeClient
+	P4Info         p4_config_v1.P4Info
 	Stream         p4.P4Runtime_StreamChannelClient
 	DeviceID       uint64
 	ElectionID     p4.Uint128
+}
+
+
+func (c *P4rtClient) tableId(name string) uint32 {
+    if c.P4Info == nil {
+        return invalidID
+    }
+    for _, table := range c.P4Info.Tables {
+        if table.Preamble.Name == name {
+            return table.Preamble.Id
+        }
+    }
+    return invalidID
+}
+
+func (c *P4rtClient) actionId(name string) uint32 {
+    if c.P4Info == nil {
+        return invalidID
+    }
+    for _, action := range c.P4Info.Actions {
+        if action.Preamble.Name == name {
+            return action.Preamble.Id
+        }
+    }
+    return invalidID
 }
 
 func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
@@ -108,10 +135,17 @@ func (c *P4rtClient) Init() (err error) {
 	return
 }
 
-func (c *Client) InsertTableEntry(table string, action string, mfs []MatchInterface, params [][]byte) error {
-    tableID := c.tableId(table)
-    actionID := c.actionId(action)
+func (c *P4rtClient) InsertTableEntry(tableEntry AppTableEntry, table string, action string, mfs []MatchInterface, params [][]byte) error {
 
+    fmt.Printf("Insert Table Entry for Table %s\n", tableEntry.Table_Name)
+    tableID := c.tableId(tableEntry.Table_Name)
+    actionID := c.actionId(tableEntry.Action_Name)
+    fmt.Printf("adding fields\n");
+    for idx, f := range tableEntry.field_size {
+        struct match_field *mf = table_entry->fields[i];
+        std::string tb_name(table_entry->table_name);
+        addFieldValue(tableEntry, tb_name, mf);
+    }
     directAction := &p4_v1.Action{
         ActionId: actionID,
     }
@@ -170,6 +204,7 @@ func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath st
 		return
 	}
 
+	c.P4Info = p4info 
 	deviceConfig, err := LoadDeviceConfig(deviceConfigPath)
 	if err != nil {
 		fmt.Printf("bmv2 json read failed %v",err)
