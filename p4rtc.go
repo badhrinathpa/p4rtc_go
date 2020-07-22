@@ -15,10 +15,48 @@ import (
 	"google.golang.org/grpc"
 )
 
-var MAX_BATCH_SIZE = 200
-var NUM_PARALLEL_WRITERS = 1
-var WRITE_BUFFER_SIZE = MAX_BATCH_SIZE * NUM_PARALLEL_WRITERS * 10
-type P4DeviceConfig []byte 
+type P4DeviceConfig []byte
+
+const (
+      FIELD_TYPE_EXACT      uint8=0
+      FIELD_TYPE_LPM        uint8=1
+      FIELD_TYPE_TERNARY    uint8=2
+      FIELD_TYPE_RANGE      uint8=3
+      FUNCTION_TYPE_INSERT  uint8=4
+      FUNCTION_TYPE_UPDATE  uint8-5
+      FUNCTION_TYPE_DELETE  uint8=6
+)
+
+type Intf_Table_Entry struct {
+    Ip          uint32
+    Prefix_Len  uint32
+    Src_Intf    string
+    Direction   string
+}
+
+type Action_Param struct {
+	Len            uint32
+	Name           string
+	Value          []byte
+}
+
+type Match_Field struct {
+	Type           Field_Type
+	Len            uint32
+	Prefix_Len     uint32
+	Name           string
+	Value          []byte
+	mask           []byte
+}
+
+type AppTableEntry struct {
+	Field_Size     uint32
+	Param_Size     uint32
+	Table_Name     string
+	Action_Name    string
+	Fields         []Match_Field
+	Params         []Action_Param
+}
 
 type P4rtClient struct {
 	Client         p4.P4RuntimeClient
@@ -68,6 +106,52 @@ func (c *P4rtClient) Init() (err error) {
 
 	fmt.Println("exited from recv thread.")
 	return
+}
+
+func (c *Client) InsertTableEntry(table string, action string, mfs []MatchInterface, params [][]byte) error {
+    tableID := c.tableId(table)
+    actionID := c.actionId(action)
+
+    directAction := &p4_v1.Action{
+        ActionId: actionID,
+    }
+
+    for idx, p := range params {
+        param := &p4_v1.Action_Param{
+            ParamId: uint32(idx + 1),
+            Value:   p,
+        }
+        directAction.Params = append(directAction.Params, param)
+    }
+
+    tableAction := &p4_v1.TableAction{
+        Type: &p4_v1.TableAction_Action{directAction},
+    }
+
+    entry := &p4_v1.TableEntry{
+        TableId:         tableID,
+        Action:          tableAction,
+        IsDefaultAction: (mfs == nil),
+    }
+
+    for idx, mf := range mfs {
+        entry.Match = append(entry.Match, mf.get(uint32(idx+1)))
+    }
+
+    var updateType p4_v1.Update_Type
+    if mfs == nil {
+        updateType = p4_v1.Update_MODIFY
+    } else {
+        updateType = p4_v1.Update_INSERT
+    }
+    update := &p4_v1.Update{
+        Type: updateType,
+        Entity: &p4_v1.Entity{
+            Entity: &p4_v1.Entity_TableEntry{entry},
+        },
+    }
+
+    return c.WriteUpdate(update)
 }
 
 func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath string) (err error) {
