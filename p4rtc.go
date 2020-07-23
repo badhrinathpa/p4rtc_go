@@ -80,6 +80,18 @@ func (c *P4rtClient) tableId(name string) uint32 {
     return invalidID
 }
 
+func (c *P4rtClient) addMatchField(matchField Match_Field) uint32 {
+    if c.P4Info == nil {
+        return invalidID
+    }
+    for _, table := range c.P4Info.Tables {
+        if table.Preamble.Name == name {
+            return table.Preamble.Id
+        }
+    }
+    return invalidID
+}
+
 func (c *P4rtClient) actionId(name string) uint32 {
     if c.P4Info == nil {
         return invalidID
@@ -135,15 +147,59 @@ func (c *P4rtClient) Init() (err error) {
 	return
 }
 
+type ExactMatch struct {
+    Value []byte
+}
+
+func (m *ExactMatch) get(ID uint32) *p4_v1.FieldMatch {
+    exact := &p4_v1.FieldMatch_Exact{
+        Value: m.Value,
+    }
+    mf := &p4_v1.FieldMatch{
+        FieldId:        ID,
+        FieldMatchType: &p4_v1.FieldMatch_Exact_{exact},
+    }
+    return mf
+}
+
+type LpmMatch struct {
+    Value []byte
+    PLen  int32
+}
+
+func (m *LpmMatch) get(ID uint32) *p4_v1.FieldMatch {
+    lpm := &p4_v1.FieldMatch_LPM{
+        Value:     m.Value,
+        PrefixLen: m.PLen,
+    }
+
+    // P4Runtime now has strict rules regarding ternary matches: in the
+    // case of LPM, trailing bits in the value (after prefix) must be set
+    // to 0.
+    firstByteMasked := int(m.PLen / 8)
+    if firstByteMasked != len(m.Value) {
+        i := firstByteMasked
+        r := m.PLen % 8
+        m.Value[i] = m.Value[i] & (0xff << (8 - r))
+        for i = i + 1; i < len(m.Value); i++ {
+            m.Value[i] = 0
+        }
+    }
+
+    mf := &p4_v1.FieldMatch{
+        FieldId:        ID,
+        FieldMatchType: &p4_v1.FieldMatch_Lpm{lpm},
+    }
+    return mf
+}
+
 func (c *P4rtClient) InsertTableEntry(tableEntry AppTableEntry, table string, action string, mfs []MatchInterface, params [][]byte) error {
 
     fmt.Printf("Insert Table Entry for Table %s\n", tableEntry.Table_Name)
     tableID := c.tableId(tableEntry.Table_Name)
     actionID := c.actionId(tableEntry.Action_Name)
     fmt.Printf("adding fields\n");
-    for idx, f := range tableEntry.field_size {
-        struct match_field *mf = table_entry->fields[i];
-        std::string tb_name(table_entry->table_name);
+    for mf := range tableEntry.fields {
         addFieldValue(tableEntry, tb_name, mf);
     }
     directAction := &p4_v1.Action{
