@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/golang/protobuf/proto"
-    p4_config_v1 "github.com/p4lang/p4runtime/go/p4/config/v1"
+	p4_config_v1 "github.com/p4lang/p4runtime/go/p4/config/v1"
 	p4 "github.com/p4lang/p4runtime/go/p4/v1"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc"
@@ -19,89 +19,65 @@ type P4DeviceConfig []byte
 
 const invalidID = 0
 const (
-      FIELD_TYPE_EXACT      uint8=0
-      FIELD_TYPE_LPM        uint8=1
-      FIELD_TYPE_TERNARY    uint8=2
-      FIELD_TYPE_RANGE      uint8=3
-      FUNCTION_TYPE_INSERT  uint8=4
-      FUNCTION_TYPE_UPDATE  uint8-5
-      FUNCTION_TYPE_DELETE  uint8=6
+	FUNCTION_TYPE_INSERT uint8 = 1
+	FUNCTION_TYPE_UPDATE uint8 = 2
+	FUNCTION_TYPE_DELETE uint8 = 3
 )
 
 type Intf_Table_Entry struct {
-    Ip          uint32
-    Prefix_Len  uint32
-    Src_Intf    string
-    Direction   string
+	Ip         uint32
+	Prefix_Len uint32
+	Src_Intf   string
+	Direction  string
 }
 
 type Action_Param struct {
-	Len            uint32
-	Name           string
-	Value          []byte
+	Len   uint32
+	Name  string
+	Value []byte
 }
 
 type Match_Field struct {
-	Type           Field_Type
-	Len            uint32
-	Prefix_Len     uint32
-	Name           string
-	Value          []byte
-	mask           []byte
+	Len        uint32
+	Prefix_Len uint32
+	Name       string
+	Value      []byte
+	Mask       []byte
 }
 
 type AppTableEntry struct {
-	Field_Size     uint32
-	Param_Size     uint32
-	Table_Name     string
-	Action_Name    string
-	Fields         []Match_Field
-	Params         []Action_Param
+	Field_Size  uint32
+	Param_Size  uint32
+	Table_Name  string
+	Action_Name string
+	Fields      []Match_Field
+	Params      []Action_Param
 }
 
 type P4rtClient struct {
-	Client         p4.P4RuntimeClient
-	P4Info         p4_config_v1.P4Info
-	Stream         p4.P4Runtime_StreamChannelClient
-	DeviceID       uint64
-	ElectionID     p4.Uint128
+	Client     p4.P4RuntimeClient
+	P4Info     p4_config_v1.P4Info
+	Stream     p4.P4Runtime_StreamChannelClient
+	DeviceID   uint64
+	ElectionID p4.Uint128
 }
-
 
 func (c *P4rtClient) tableId(name string) uint32 {
-    if c.P4Info == nil {
-        return invalidID
-    }
-    for _, table := range c.P4Info.Tables {
-        if table.Preamble.Name == name {
-            return table.Preamble.Id
-        }
-    }
-    return invalidID
-}
-
-func (c *P4rtClient) addMatchField(matchField Match_Field) uint32 {
-    if c.P4Info == nil {
-        return invalidID
-    }
-    for _, table := range c.P4Info.Tables {
-        if table.Preamble.Name == name {
-            return table.Preamble.Id
-        }
-    }
-    return invalidID
+	for _, table := range c.P4Info.Tables {
+		if table.Preamble.Name == name {
+			return table.Preamble.Id
+		}
+	}
+	return invalidID
 }
 
 func (c *P4rtClient) actionId(name string) uint32 {
-    if c.P4Info == nil {
-        return invalidID
-    }
-    for _, action := range c.P4Info.Actions {
-        if action.Preamble.Name == name {
-            return action.Preamble.Id
-        }
-    }
-    return invalidID
+	for _, action := range c.P4Info.Actions {
+		if action.Preamble.Name == name {
+			return action.Preamble.Id
+		}
+	}
+	return invalidID
 }
 
 func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
@@ -147,101 +123,156 @@ func (c *P4rtClient) Init() (err error) {
 	return
 }
 
-type ExactMatch struct {
-    Value []byte
+func (c *P4rtClient) addFieldValue(entry *p4.TableEntry, field Match_Field,
+	tableId uint32) error {
+	fmt.Println("add Match field\n")
+	fieldVal := &p4.FieldMatch{
+		FieldId: 0,
+	}
+
+	for _, tables := range c.P4Info.Tables {
+		if tables.Preamble.Id == tableId {
+			for _, fields := range tables.MatchFields {
+				if fields.Name == field.Name {
+					fmt.Println("field name match found.\n")
+					fieldVal.FieldId = fields.Id
+					switch fields.GetMatchType() {
+					case p4_config_v1.MatchField_EXACT:
+						{
+							exact := &p4.FieldMatch_Exact{
+								Value: field.Value,
+							}
+							fieldVal.FieldMatchType = &p4.FieldMatch_Exact_{exact}
+						}
+					case p4_config_v1.MatchField_LPM:
+						{
+							lpm := &p4.FieldMatch_LPM{
+								Value:     field.Value,
+								PrefixLen: int32(field.Prefix_Len),
+							}
+							fieldVal.FieldMatchType = &p4.FieldMatch_Lpm{lpm}
+						}
+					case p4_config_v1.MatchField_TERNARY:
+						{
+							tern := &p4.FieldMatch_Ternary{
+								Value: field.Value,
+								Mask:  field.Mask,
+							}
+							fieldVal.FieldMatchType =
+								&p4.FieldMatch_Ternary_{tern}
+						}
+					case p4_config_v1.MatchField_RANGE:
+						{
+							rangeVal := &p4.FieldMatch_Range{
+								Low:  field.Value,
+								High: field.Mask,
+							}
+							fieldVal.FieldMatchType =
+								&p4.FieldMatch_Range_{rangeVal}
+						}
+					default:
+						fmt.Printf("Unknown MatchType.\n")
+						err := fmt.Errorf("Unknown MatchType for FieldMatch")
+						return err
+					}
+
+					entry.Match = append(entry.Match, fieldVal)
+					return nil
+				}
+			}
+		}
+	}
+
+	err := fmt.Errorf("addField Value failed")
+	return err
 }
 
-func (m *ExactMatch) get(ID uint32) *p4_v1.FieldMatch {
-    exact := &p4_v1.FieldMatch_Exact{
-        Value: m.Value,
-    }
-    mf := &p4_v1.FieldMatch{
-        FieldId:        ID,
-        FieldMatchType: &p4_v1.FieldMatch_Exact_{exact},
-    }
-    return mf
+func (c *P4rtClient) addActionValue(action *p4.Action, param Action_Param,
+	actionId uint32) error {
+	fmt.Println("add action param value")
+
+	for _, actions := range c.P4Info.Actions {
+		if actions.Preamble.Id == actionId {
+			for _, params := range actions.Params {
+				if params.Name == param.Name {
+					paramVal := &p4.Action_Param{
+						ParamId: params.Id,
+						Value:   param.Value,
+					}
+					action.Params = append(action.Params, paramVal)
+					return nil
+				}
+			}
+		}
+	}
+
+	err := fmt.Errorf("addAction Value failed")
+	return err
 }
 
-type LpmMatch struct {
-    Value []byte
-    PLen  int32
+func (c *P4rtClient) InsertTableEntry(tableEntry AppTableEntry, func_type uint8) error {
+
+	fmt.Printf("Insert Table Entry for Table %s\n", tableEntry.Table_Name)
+	tableID := c.tableId(tableEntry.Table_Name)
+	actionID := c.actionId(tableEntry.Action_Name)
+	directAction := &p4.Action{
+		ActionId: actionID,
+	}
+
+	fmt.Printf("adding action params \n")
+	for _, p := range tableEntry.Params {
+		err := c.addActionValue(directAction, p, actionID)
+		if err != nil {
+			fmt.Printf("AddActionValue failed  %v\n", err)
+			return err
+		}
+	}
+
+	tableAction := &p4.TableAction{
+		Type: &p4.TableAction_Action{directAction},
+	}
+
+	entry := &p4.TableEntry{
+		TableId: tableID,
+		Action:  tableAction,
+	}
+
+	fmt.Printf("adding fields\n")
+	for _, mf := range tableEntry.Fields {
+		err := c.addFieldValue(entry, mf, tableID)
+		if err != nil {
+			fmt.Printf("AddFieldValue failed  %v\n", err)
+			return err
+		}
+	}
+
+	var updateType p4.Update_Type
+	if func_type == FUNCTION_TYPE_UPDATE {
+		updateType = p4.Update_MODIFY
+	} else if func_type == FUNCTION_TYPE_INSERT {
+		updateType = p4.Update_INSERT
+	} else if func_type == FUNCTION_TYPE_DELETE {
+		updateType = p4.Update_DELETE
+	}
+
+	update := &p4.Update{
+		Type: updateType,
+		Entity: &p4.Entity{
+			Entity: &p4.Entity_TableEntry{entry},
+		},
+	}
+
+	return c.WriteReq(update)
 }
 
-func (m *LpmMatch) get(ID uint32) *p4_v1.FieldMatch {
-    lpm := &p4_v1.FieldMatch_LPM{
-        Value:     m.Value,
-        PrefixLen: m.PLen,
-    }
-
-    // P4Runtime now has strict rules regarding ternary matches: in the
-    // case of LPM, trailing bits in the value (after prefix) must be set
-    // to 0.
-    firstByteMasked := int(m.PLen / 8)
-    if firstByteMasked != len(m.Value) {
-        i := firstByteMasked
-        r := m.PLen % 8
-        m.Value[i] = m.Value[i] & (0xff << (8 - r))
-        for i = i + 1; i < len(m.Value); i++ {
-            m.Value[i] = 0
-        }
-    }
-
-    mf := &p4_v1.FieldMatch{
-        FieldId:        ID,
-        FieldMatchType: &p4_v1.FieldMatch_Lpm{lpm},
-    }
-    return mf
-}
-
-func (c *P4rtClient) InsertTableEntry(tableEntry AppTableEntry, table string, action string, mfs []MatchInterface, params [][]byte) error {
-
-    fmt.Printf("Insert Table Entry for Table %s\n", tableEntry.Table_Name)
-    tableID := c.tableId(tableEntry.Table_Name)
-    actionID := c.actionId(tableEntry.Action_Name)
-    fmt.Printf("adding fields\n");
-    for mf := range tableEntry.fields {
-        addFieldValue(tableEntry, tb_name, mf);
-    }
-    directAction := &p4_v1.Action{
-        ActionId: actionID,
-    }
-
-    for idx, p := range params {
-        param := &p4_v1.Action_Param{
-            ParamId: uint32(idx + 1),
-            Value:   p,
-        }
-        directAction.Params = append(directAction.Params, param)
-    }
-
-    tableAction := &p4_v1.TableAction{
-        Type: &p4_v1.TableAction_Action{directAction},
-    }
-
-    entry := &p4_v1.TableEntry{
-        TableId:         tableID,
-        Action:          tableAction,
-        IsDefaultAction: (mfs == nil),
-    }
-
-    for idx, mf := range mfs {
-        entry.Match = append(entry.Match, mf.get(uint32(idx+1)))
-    }
-
-    var updateType p4_v1.Update_Type
-    if mfs == nil {
-        updateType = p4_v1.Update_MODIFY
-    } else {
-        updateType = p4_v1.Update_INSERT
-    }
-    update := &p4_v1.Update{
-        Type: updateType,
-        Entity: &p4_v1.Entity{
-            Entity: &p4_v1.Entity_TableEntry{entry},
-        },
-    }
-
-    return c.WriteUpdate(update)
+func (c *P4rtClient) WriteReq(update *p4.Update) error {
+	req := &p4.WriteRequest{
+		DeviceId:   c.DeviceID,
+		ElectionId: &c.ElectionID,
+		Updates:    []*p4.Update{update},
+	}
+	_, err := c.Client.Write(context.Background(), req)
+	return err
 }
 
 func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath string) (err error) {
@@ -252,7 +283,7 @@ func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath st
 		fmt.Printf("Read p4info file error %v\n", err)
 		return
 	}
-	
+
 	var p4info p4_config_v1.P4Info
 	err = proto.UnmarshalText(string(p4infoBytes), &p4info)
 	if err != nil {
@@ -260,33 +291,33 @@ func (c *P4rtClient) SetForwardingPipelineConfig(p4InfoPath, deviceConfigPath st
 		return
 	}
 
-	c.P4Info = p4info 
+	c.P4Info = p4info
 	deviceConfig, err := LoadDeviceConfig(deviceConfigPath)
 	if err != nil {
-		fmt.Printf("bmv2 json read failed %v",err)
-		return 
+		fmt.Printf("bmv2 json read failed %v", err)
+		return
 	}
-	
+
 	var pipeline p4.ForwardingPipelineConfig
 	pipeline.P4Info = &p4info
 	pipeline.P4DeviceConfig = deviceConfig
-	
+
 	err = SetPipelineConfig(c.Client, c.DeviceID, &c.ElectionID, &pipeline)
 	if err != nil {
-		fmt.Printf("set pipeline config error %v",err)
+		fmt.Printf("set pipeline config error %v", err)
 		return
 	}
 	return
 }
 
 func SetPipelineConfig(client p4.P4RuntimeClient, deviceID uint64, electionID *p4.Uint128, config *p4.ForwardingPipelineConfig) error {
-    req := &p4.SetForwardingPipelineConfigRequest{
-        DeviceId: deviceID,
-        RoleId:   0,
-        ElectionId: electionID,
-        Action: p4.SetForwardingPipelineConfigRequest_VERIFY_AND_COMMIT,
-        Config: config,
-    }
+	req := &p4.SetForwardingPipelineConfigRequest{
+		DeviceId:   deviceID,
+		RoleId:     0,
+		ElectionId: electionID,
+		Action:     p4.SetForwardingPipelineConfigRequest_VERIFY_AND_COMMIT,
+		Config:     config,
+	}
 	_, err := client.SetForwardingPipelineConfig(context.Background(), req)
 	if err != nil {
 		fmt.Printf("set forwarding pipeline returned error %v", err)
