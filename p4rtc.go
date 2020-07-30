@@ -80,14 +80,22 @@ func (c *P4rtClient) actionId(name string) uint32 {
 	return invalidID
 }
 
-func (c *P4rtClient) get_enum_val(enum_name string, 
-                                  val_name string) uint32 {
-	for _, action := range c.P4Info.Actions {
-		if action.Preamble.Name == name {
-			return action.Preamble.Id
+func (c *P4rtClient) get_enum_val(enum_name string,
+	val_name string) ([]byte, error) {
+	enumVal, ok := c.P4Info.TypeInfo.SerializableEnums[enum_name]
+	if ok == false {
+		err := fmt.Errorf("Enum Not found with name %s", enum_name)
+		return nil, err
+	}
+
+	for _, enums := range enumVal.Members {
+		if enums.Name == val_name {
+			return enums.Value, nil
 		}
 	}
-	return invalidID
+
+	err := fmt.Errorf("EnumVal not found.\n")
+	return nil, err
 }
 
 func (c *P4rtClient) SetMastership(electionID p4.Uint128) (err error) {
@@ -133,49 +141,44 @@ func (c *P4rtClient) Init() (err error) {
 	return
 }
 
-ction[STRING_SIZE];;
-    int ip;
-    int ip_prefix_len;
-};*/
+func (c *P4rtClient) WriteInterfaceTable(
+	intf_entry *Intf_Table_Entry,
+	func_type uint8) error {
 
-func (c *P4rtClient) WriteInterfaceTable( 
-                intf_entry *Intf_Table_Entry,
-                func_type uint8) error {
+	fmt.Println("WriteInterfaceTable. \n")
+	te := AppTableEntry{
+		Table_Name:  "PreQosPipe.source_iface_lookup",
+		Action_Name: "PreQosPipe.set_source_iface",
+	}
 
-    fmt.Println("WriteInterfaceTable. \n")
-    te := AppTableEntry {
-        Table_Name: "PreQosPipe.source_iface_lookup",
-        Action_Name: "PreQosPipe.set_source_iface",
-    }
+	te.Field_Size = 1
+	te.Fields = make([]Match_Field, 1)
+	te.Fields[0].Name = "ipv4_dst_prefix"
+	te.Fields[0].Value = []byte(intf_entry.Src_Intf)
+	te.Fields[0].Prefix_Len = intf_entry.Prefix_Len
 
-    te.Field_Size = 1
-    te.Fields = make([]Match_Field, 1)
-    te.Fields[0].Name = "ipv4_dst_prefix"
-    te.Fields[0].Value = []byte(intf_entry.Src_Intf)
-    te.Fields[0].Prefix_Len =  intf_entry.Prefix_Len
+	te.Param_Size = 2
+	te.Params = make([]Action_Param, 2)
+	te.Params[0].Name = "src_iface"
+	enum_name := "InterfaceType"
+	val, err := c.get_enum_val(enum_name, intf_entry.Src_Intf)
+	if err != nil {
+		fmt.Printf("Could not find enum val %v", err)
+		return err
+	}
+	te.Params[0].Value = val
 
-    te.Param_Size = 2
-    te.Params = make([]Action_Param, 2)
-    te.Params[0].Name = "src_iface"
-    enum_name = "InterfaceType"
-    val, err := c.get_enum_val(enum_name, intf_entry.Src_Intf)
-    if err!= nil {
-        fmt.Printf("Could not find enum val %v", err)
-        return err
-    }
-    te.Params[0].Value = []byte(val)
+	te.Params[1].Name = "direction"
+	enum_name = "Direction"
+	val, err = c.get_enum_val(enum_name, intf_entry.Direction)
+	if err != nil {
+		fmt.Printf("Could not find enum val %v", err)
+		return err
+	}
+	te.Params[1].Value = val
 
-    te.Params[1].Name = "direction"
-    enum_name = "Direction"
-    val, err := c.get_enum_val(enum_name, intf_entry.Direction)
-    if err!= nil {
-        fmt.Printf("Could not find enum val %v", err)
-        return err
-    }
-    te.Params[1].Value = []byte(val)
-
-    var prio uint8 = 0;
-    return c.InsertTableEntry(te, func_type, prio) 
+	var prio int32 = 0
+	return c.InsertTableEntry(te, func_type, prio)
 }
 
 func (c *P4rtClient) addFieldValue(entry *p4.TableEntry, field Match_Field,
@@ -266,8 +269,8 @@ func (c *P4rtClient) addActionValue(action *p4.Action, param Action_Param,
 }
 
 func (c *P4rtClient) InsertTableEntry(
-                        tableEntry AppTableEntry, 
-                        func_type uint8, prio uint8) error {
+	tableEntry AppTableEntry,
+	func_type uint8, prio int32) error {
 
 	fmt.Printf("Insert Table Entry for Table %s\n", tableEntry.Table_Name)
 	tableID := c.tableId(tableEntry.Table_Name)
@@ -290,9 +293,9 @@ func (c *P4rtClient) InsertTableEntry(
 	}
 
 	entry := &p4.TableEntry{
-		TableId: tableID,
-        Priority: prio,
-		Action:  tableAction,
+		TableId:  tableID,
+		Priority: prio,
+		Action:   tableAction,
 	}
 
 	fmt.Printf("adding fields\n")
