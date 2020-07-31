@@ -156,7 +156,7 @@ func (c *P4rtClient) WriteInterfaceTable(
 	te.Fields = make([]Match_Field, 1)
 	te.Fields[0].Name = "ipv4_dst_prefix"
 	te.Fields[0].Value = intf_entry.Ip
-	te.Fields[0].Prefix_Len = binary.BigEndian.Uint32(intf_entry.Prefix_Len)
+	te.Fields[0].Prefix_Len = binary.LittleEndian.Uint32(intf_entry.Prefix_Len)
 
 	te.Param_Size = 2
 	te.Params = make([]Action_Param, 2)
@@ -324,6 +324,7 @@ func (c *P4rtClient) InsertTableEntry(
 		},
 	}
 
+    fmt.Println(proto.MarshalTextString(update))
 	return c.WriteReq(update)
 }
 
