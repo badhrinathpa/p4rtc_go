@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+    "encoding/binary"
 
 	"github.com/golang/protobuf/proto"
 	p4_config_v1 "github.com/p4lang/p4runtime/go/p4/config/v1"
@@ -25,8 +26,8 @@ const (
 )
 
 type Intf_Table_Entry struct {
-	Ip         uint32
-	Prefix_Len uint32
+	Ip         []byte
+	Prefix_Len []byte
 	Src_Intf   string
 	Direction  string
 }
@@ -154,8 +155,8 @@ func (c *P4rtClient) WriteInterfaceTable(
 	te.Field_Size = 1
 	te.Fields = make([]Match_Field, 1)
 	te.Fields[0].Name = "ipv4_dst_prefix"
-	te.Fields[0].Value = []byte(intf_entry.Src_Intf)
-	te.Fields[0].Prefix_Len = intf_entry.Prefix_Len
+	te.Fields[0].Value = intf_entry.Ip
+	te.Fields[0].Prefix_Len = binary.BigEndian.Uint32(intf_entry.Prefix_Len)
 
 	te.Param_Size = 2
 	te.Params = make([]Action_Param, 2)
