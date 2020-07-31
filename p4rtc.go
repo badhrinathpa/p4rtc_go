@@ -143,7 +143,7 @@ func (c *P4rtClient) Init() (err error) {
 }
 
 func (c *P4rtClient) WriteInterfaceTable(
-	intf_entry *Intf_Table_Entry,
+	intf_entry Intf_Table_Entry,
 	func_type uint8) error {
 
 	fmt.Println("WriteInterfaceTable. \n")
